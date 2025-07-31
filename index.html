@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>識別性シミュレーション (ちょうど識別 vs 過小識別)</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- math.js for matrix operations (OLS calculation) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/10.6.4/math.min.js"></script>
     <style>
         body {
@@ -274,6 +275,7 @@
 
         // --- Canvas Drawing Functions ---
         function setCanvasSize(canvas) {
+            if (!canvas) return; // Add a check for null/undefined canvas
             const containerWidth = canvas.parentElement.clientWidth;
             canvas.width = Math.min(containerWidth, 700);
             canvas.height = canvas.width * (2/3);
@@ -281,14 +283,17 @@
         }
 
         function toCanvasX(p, canvas) {
+            if (!canvas) return 0;
             return padding + (p - P_MIN) * (canvas.width - 2 * padding) / (P_MAX - P_MIN);
         }
 
         function toCanvasY(q, canvas) {
+            if (!canvas) return 0;
             return canvas.height - padding - (q - Q_MIN) * (canvas.height - 2 * padding) / (Q_MAX - Q_MIN);
         }
 
         function drawAxes(canvas, ctx) {
+            if (!canvas || !ctx) return;
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             ctx.beginPath();
             ctx.strokeStyle = '#333';
@@ -312,6 +317,7 @@
         }
 
         function drawScatterPoints(points, color, canvas, ctx) {
+            if (!canvas || !ctx) return;
             ctx.fillStyle = color;
             points.forEach(point => {
                 if (point.P >= P_MIN && point.P <= P_MAX && point.Q >= Q_MIN && point.Q <= Q_MAX) {
@@ -323,6 +329,7 @@
         }
 
         function drawLine(slope, intercept, color, label, isDemand, baseExoValue, canvas, ctx) {
+            if (!canvas || !ctx) return;
             ctx.beginPath();
             ctx.strokeStyle = color;
             ctx.lineWidth = 2;
@@ -730,7 +737,7 @@
         mMeanSliderJI.addEventListener('input', (event) => {
             mMeanValueJI.textContent = parseFloat(event.target.value);
             // Reset estimation state if sliders are changed after data generation
-            if (ji_data_generated_flag) {
+            if (ji_data_generated_flag) { // Only if data was already generated
                 ji_data_generated_flag = false; // Invalidate current data
                 ji_lines_estimated_flag = false;
                 estimateButtonJI.disabled = true;
@@ -739,7 +746,7 @@
         });
         cMeanSliderJI.addEventListener('input', (event) => {
             cMeanValueJI.textContent = parseFloat(event.target.value);
-            if (ji_data_generated_flag) {
+            if (ji_data_generated_flag) { // Only if data was already generated
                 ji_data_generated_flag = false;
                 ji_lines_estimated_flag = false;
                 estimateButtonJI.disabled = true;
@@ -752,7 +759,7 @@
         // Event listeners for Under-Identified tab
         cMeanSliderUI.addEventListener('input', (event) => {
             cMeanValueUI.textContent = parseFloat(event.target.value);
-            if (ui_data_generated_flag) {
+            if (ui_data_generated_flag) { // Only if data was already generated
                 ui_data_generated_flag = false;
                 ui_lines_estimated_flag = false;
                 estimateButtonUI.disabled = true;
@@ -763,13 +770,20 @@
         estimateButtonUI.addEventListener('click', () => estimateLines('under-identified'));
 
         // Initial setup
-        setCanvasSize(document.getElementById('canvasJI'));
-        setCanvasSize(document.getElementById('canvasUI')); // Set for both initially
+        // Ensure canvases are available before calling setCanvasSize
+        const canvasJI = document.getElementById('canvasJI');
+        const canvasUI = document.getElementById('canvasUI');
+        if (canvasJI) setCanvasSize(canvasJI);
+        if (canvasUI) setCanvasSize(canvasUI);
+
         switchTab('just-identified'); // Activate default tab and run initial setup for it
 
         window.addEventListener('resize', () => {
-            setCanvasSize(document.getElementById('canvasJI'));
-            setCanvasSize(document.getElementById('canvasUI'));
+            // Re-set size for both canvases as they might be affected by overall layout changes
+            const currentCanvasJI = document.getElementById('canvasJI');
+            const currentCanvasUI = document.getElementById('canvasUI');
+            if (currentCanvasJI) setCanvasSize(currentCanvasJI);
+            if (currentCanvasUI) setCanvasSize(currentCanvasUI);
             updateGraph(activeTabId);
         });
     </script>
