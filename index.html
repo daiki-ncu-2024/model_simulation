@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>識別性シミュレーション (ちょうど識別 vs 過小識別)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/10.6.4/math.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background-color: #f0f4f8;
+            padding: 20px;
+        }
+        .container {
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            padding: 24px;
+            max-width: 900px;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .tabs {
+            display: flex;
+            margin-bottom: 20px;
+            width: 100%;
+            max-width: 700px;
+            border-bottom: 2px solid #e2e8f0;
+        }
+        .tab-button {
+            flex: 1;
+            padding: 12px 0;
+            text-align: center;
+            cursor: pointer;
+            font-weight: 600;
+            color: #4b5563;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s ease;
+        }
+        .tab-button:hover {
+            color: #1e40af;
+        }
+        .tab-button.active {
+            color: #3b82f6;
+            border-bottom-color: #3b82f6;
+        }
+        .tab-content {
+            width: 100%;
+            display: none; /* Hidden by default */
+            flex-direction: column;
+            align-items: center;
+        }
+        .tab-content.active {
+            display: flex; /* Show active tab content */
+        }
+        canvas {
+            background-color: #fdfdfd;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            width: 100%; /* Responsive width */
+            max-width: 700px; /* Max width for larger screens */
+            height: auto; /* Maintain aspect ratio */
+        }
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            width: 100%;
+            max-width: 500px;
+        }
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        input[type="range"] {
+            flex-grow: 1;
+            -webkit-appearance: none;
+            height: 8px;
+            background: #cbd5e1;
+            border-radius: 5px;
+            outline: none;
+            opacity: 0.7;
+            transition: opacity .2s;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            background: #3b82f6;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+        input[type="range"]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            background: #3b82f6;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+        .button {
+            background-color: #3b82f6;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .button:hover:not(:disabled) {
+            background-color: #2563eb;
+        }
+        .button:disabled {
+            background-color: #9ca3af;
+            cursor: not-allowed;
+        }
+        .legend {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            background-color: #f9fafb;
+            font-size: 0.9em;
+            text-align: left;
+            width: 100%;
+            max-width: 600px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+        .legend-color {
+            width: 20px;
+            height: 10px;
+            margin-right: 8px;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="text-2xl font-bold mb-4 text-gray-800">識別性シミュレーション (ちょうど識別 vs 過小識別)</h1>
+        <p class="text-gray-600 mb-6 text-center">
+            タブを選択し、「データ生成」ボタンでサンプルデータを表示、その後「直線推定」ボタンで推定結果を確認します。
+        </p>
+
+        <div class="tabs">
+            <button class="tab-button active" data-tab="just-identified">ちょうど識別</button>
+            <button class="tab-button" data-tab="under-identified">過小識別</button>
+        </div>
+
+        <div id="justIdentifiedContent" class="tab-content active">
+            <p class="text-gray-700 text-center mb-4">
+                <strong>モデル:</strong><br>
+                需要関数: Q = 100 - 2P + M + $\epsilon_D$<br>
+                供給関数: Q = 10 + P + C + $\epsilon_S$
+            </p>
+            <canvas id="canvasJI"></canvas>
+            <div class="controls">
+                <div class="control-group">
+                    <label for="mMeanSliderJI" class="text-gray-700 font-medium">Mの平均値 (需要シフト):</label>
+                    <input type="range" id="mMeanSliderJI" min="-20" max="20" value="0" step="1">
+                    <span id="mMeanValueJI" class="text-gray-800 font-semibold">0</span>
+                </div>
+                <div class="control-group">
+                    <label for="cMeanSliderJI" class="text-gray-700 font-medium">Cの平均値 (供給シフト):</label>
+                    <input type="range" id="cMeanSliderJI" min="-20" max="20" value="0" step="1">
+                    <span id="cMeanValueJI" class="text-gray-800 font-semibold">0</span>
+                </div>
+                <button id="generateButtonJI" class="button">データ生成</button>
+                <button id="estimateButtonJI" class="button" disabled>直線推定</button>
+            </div>
+            <div class="legend">
+                <p class="font-bold mb-2">凡例:</p>
+                <div class="legend-item"><div class="legend-color" style="background-color: #60a5fa;"></div>観測データ点 (P, Q)</div>
+                <div class="legend-item"><div class="legend-color" style="background-color: #ef4444;"></div>真の需要曲線 (M=0)</div>
+                <div class="legend-item"><div class="legend-color" style="background-color: #22c55e;"></div>真の供給曲線 (C=0)</div>
+                <div class="legend-item"><div class="legend-color" style="background-color: #f97316;"></div>2SLS推定 需要曲線</div>
+                <div class="legend-item"><div class="legend-color" style="background-color: #8b5cf6;"></div>2SLS推定 供給曲線</div>
+                <p class="font-bold mt-4 mb-2">推定結果 (傾き):</p>
+                <p id="estimatedParamsJI" class="text-sm text-gray-700"></p>
+            </div>
+        </div>
+
+        <div id="underIdentifiedContent" class="tab-content">
+            <p class="text-gray-700 text-center mb-4">
+                <strong>モデル:</strong><br>
+                需要関数: Q = 100 - 2P + $\epsilon_D$ (M変数がありません)<br>
+                供給関数: Q = 10 + P + C + $\epsilon_S$
+            </p>
+            <canvas id="canvasUI"></canvas>
+            <div class="controls">
+                 <div class="control-group">
+                    <label for="cMeanSliderUI" class="text-gray-700 font-medium">Cの平均値 (供給シフト):</label>
+                    <input type="range" id="cMeanSliderUI" min="-20" max="20" value="0" step="1">
+                    <span id="cMeanValueUI" class="text-gray-800 font-semibold">0</span>
+                </div>
+                <button id="generateButtonUI" class="button">データ生成</button>
+                <button id="estimateButtonUI" class="button" disabled>直線推定</button>
+            </div>
+            <div class="legend">
+                <p class="font-bold mb-2">凡例:</p>
+                <div class="legend-item"><div class="legend-color" style="background-color: #60a5fa;"></div>観測データ点 (P, Q)</div>
+                <div class="legend-item"><div class="legend-color" style="background-color: #ef4444;"></div>真の需要曲線</div>
+                <div class="legend-item"><div class="legend-color" style="background-color: #22c55e;"></div>真の供給曲線 (C=0)</div>
+                <div class="legend-item"><div class="legend-color" style="background-color: #f97316;"></div>2SLS推定 需要曲線</div>
+                <div class="legend-item"><div class="legend-color" style="background-color: #8b5cf6;"></div>2SLS推定 供給曲線</div>
+                <p class="font-bold mt-4 mb-2">推定結果 (傾き):</p>
+                <p id="estimatedParamsUI" class="text-sm text-gray-700"></p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Global Constants and Helpers ---
+        const N_SAMPLES = 500;
+        const ERROR_SCALE = 5; // Scale of random error for P, Q
+
+        // Canvas dimensions and scaling
+        const P_MAX = 70; // Max Price
+        const Q_MAX = 150; // Max Quantity
+        const P_MIN = 0;
+        const Q_MIN = 0;
+        let padding = 50;
+
+        // Helper for generating approximate normal distribution
+        function randn_bm() {
+            let u = 0, v = 0;
+            while (u === 0) u = Math.random();
+            while (v === 0) v = Math.random();
+            return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+        }
+
+        // Basic OLS function for multiple linear regression using math.js
+        function ols(y, X) {
+            if (X.length === 0 || y.length === 0 || X[0].length === 0) {
+                console.error("OLS input arrays cannot be empty.");
+                return [];
+            }
+            try {
+                const Y_mat = math.matrix(y.map(val => [val]));
+                const X_mat = math.matrix(X);
+
+                const XtX = math.multiply(math.transpose(X_mat), X_mat);
+                // Check if XtX is singular (not invertible)
+                if (math.det(XtX) === 0) {
+                    console.error("Design matrix is singular (collinear or not enough variance). OLS cannot be performed.");
+                    return new Array(X[0].length).fill(NaN); // Return NaNs for all coefficients
+                }
+                const XtX_inv = math.inv(XtX);
+                const XtY = math.multiply(math.transpose(X_mat), Y_mat);
+
+                const beta_hat = math.multiply(XtX_inv, XtY);
+                return beta_hat._data.map(row => row[0]);
+            } catch (e) {
+                console.error("OLS calculation error:", e);
+                return new Array(X[0].length).fill(NaN); // Return NaNs on any error
+            }
+        }
+
+        // --- Canvas Drawing Functions ---
+        function setCanvasSize(canvas) {
+            const containerWidth = canvas.parentElement.clientWidth;
+            canvas.width = Math.min(containerWidth, 700);
+            canvas.height = canvas.width * (2/3);
+            padding = canvas.width * 0.08;
+        }
+
+        function toCanvasX(p, canvas) {
+            return padding + (p - P_MIN) * (canvas.width - 2 * padding) / (P_MAX - P_MIN);
+        }
+
+        function toCanvasY(q, canvas) {
+            return canvas.height - padding - (q - Q_MIN) * (canvas.height - 2 * padding) / (Q_MAX - Q_MIN);
+        }
+
+        function drawAxes(canvas, ctx) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.beginPath();
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 1.5;
+
+            ctx.moveTo(padding, canvas.height - padding);
+            ctx.lineTo(canvas.width - padding, canvas.height - padding);
+            ctx.moveTo(padding, canvas.height - padding);
+            ctx.lineTo(padding, padding);
+            ctx.stroke();
+
+            ctx.fillStyle = '#333';
+            ctx.font = '14px Inter';
+            ctx.textAlign = 'center';
+            ctx.fillText('価格 (P)', canvas.width / 2, canvas.height - padding / 2);
+            ctx.save();
+            ctx.translate(padding / 2, canvas.height / 2);
+            ctx.rotate(-Math.PI / 2);
+            ctx.fillText('数量 (Q)', 0, 0);
+            ctx.restore();
+        }
+
+        function drawScatterPoints(points, color, canvas, ctx) {
+            ctx.fillStyle = color;
+            points.forEach(point => {
+                if (point.P >= P_MIN && point.P <= P_MAX && point.Q >= Q_MIN && point.Q <= Q_MAX) {
+                    ctx.beginPath();
+                    ctx.arc(toCanvasX(point.P, canvas), toCanvasY(point.Q, canvas), 3, 0, 2 * Math.PI);
+                    ctx.fill();
+                }
+            });
+        }
+
+        function drawLine(slope, intercept, color, label, isDemand, baseExoValue, canvas, ctx) {
+            ctx.beginPath();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2;
+
+            let p1, q1, p2, q2;
+
+            p1 = P_MIN;
+            q1 = intercept + slope * p1 + baseExoValue;
+            p2 = P_MAX;
+            q2 = intercept + slope * p2 + baseExoValue;
+
+            ctx.moveTo(toCanvasX(p1, canvas), toCanvasY(q1, canvas));
+            ctx.lineTo(toCanvasX(p2, canvas), toCanvasY(q2, canvas));
+            ctx.stroke();
+
+            ctx.fillStyle = color;
+            ctx.font = '12px Inter';
+            ctx.textAlign = 'left';
+            if (isDemand) {
+                ctx.fillText(label, toCanvasX(P_MAX * 0.8, canvas), toCanvasY(intercept + slope * (P_MAX * 0.8) + baseExoValue, canvas) - 10);
+            } else {
+                ctx.fillText(label, toCanvasX(P_MAX * 0.8, canvas), toCanvasY(intercept + slope * (P_MAX * 0.8) + baseExoValue, canvas) + 15);
+            }
+        }
+
+        // --- Model-Specific Data and State ---
+
+        // Just-Identified (JI) Model Constants
+        const JI_TRUE_A1 = 100; // Demand intercept
+        const JI_TRUE_A2 = -2;  // Demand price coefficient
+        const JI_TRUE_B1 = 10;  // Supply intercept
+        const JI_TRUE_B2 = 1;   // Supply price coefficient
+
+        let ji_data_points = []; // Stores {P, Q} for scatter plot
+        let ji_generated_M_values = []; // Stores generated M values
+        let ji_generated_C_values = []; // Stores generated C values
+        let ji_estimatedDemandParams = { const: NaN, P_hat: NaN, M: NaN };
+        let ji_estimatedSupplyParams = { const: NaN, P_hat: NaN, C: NaN };
+        let ji_data_generated_flag = false;
+        let ji_lines_estimated_flag = false;
+
+        // Under-Identified (UI) Model Constants
+        const UI_TRUE_A1 = 100; // Demand intercept
+        const UI_TRUE_A2 = -2;  // Demand price coefficient
+        const UI_TRUE_B1 = 10;  // Supply intercept
+        const UI_TRUE_B2 = 1;   // Supply price coefficient
+
+        let ui_data_points = [];
+        let ui_generated_M_values = []; // M will be zeros for UI demand
+        let ui_generated_C_values = [];
+        let ui_estimatedDemandParams = { const: NaN, P_hat: NaN }; // No M coefficient in UI demand model
+        let ui_estimatedSupplyParams = { const: NaN, P_hat: NaN, C: NaN };
+        let ui_data_generated_flag = false;
+        let ui_lines_estimated_flag = false;
+
+
+        // --- Core Simulation Logic ---
+
+        function generateData(modelType) {
+            let currentData, currentMMean, currentCMean, trueA1, trueA2, trueB1, trueB2;
+            let currentMValues, currentCValues;
+
+            if (modelType === 'just-identified') {
+                currentData = ji_data_points = [];
+                currentMValues = ji_generated_M_values = [];
+                currentCValues = ji_generated_C_values = [];
+                currentMMean = parseFloat(mMeanSliderJI.value);
+                currentCMean = parseFloat(cMeanSliderJI.value);
+                trueA1 = JI_TRUE_A1; trueA2 = JI_TRUE_A2;
+                trueB1 = JI_TRUE_B1; trueB2 = JI_TRUE_B2;
+            } else { // under-identified
+                currentData = ui_data_points = [];
+                currentMValues = ui_generated_M_values = [];
+                currentCValues = ui_generated_C_values = [];
+                currentMMean = 0; // No M for UI demand, so effectively 0 mean
+                currentCMean = parseFloat(cMeanSliderUI.value);
+                trueA1 = UI_TRUE_A1; trueA2 = UI_TRUE_A2;
+                trueB1 = UI_TRUE_B1; trueB2 = UI_TRUE_B2;
+            }
+
+            // Generate M and C values for the dataset
+            for (let i = 0; i < N_SAMPLES; i++) {
+                currentMValues.push(currentMMean + randn_bm() * 5); // M with specified mean
+                currentCValues.push(currentCMean + randn_bm() * 3); // C with specified mean
+            }
+
+            // Generate P and Q (equilibrium with noise)
+            for (let i = 0; i < N_SAMPLES; i++) {
+                const epsilon_D = randn_bm() * ERROR_SCALE; // Demand error
+                const epsilon_S = randn_bm() * ERROR_SCALE; // Supply error
+
+                // Solve for equilibrium P and Q with errors and exogenous variables
+                let P_eq;
+                if (modelType === 'just-identified') {
+                    P_eq = (trueB1 - trueA1 + currentCValues[i] - currentMValues[i] + epsilon_S - epsilon_D) / (trueA2 - trueB2);
+                } else { // under-identified
+                    // Demand: Q = trueA1 + trueA2*P + epsilon_D (no M)
+                    // Supply: Q = trueB1 + trueB2*P + C + epsilon_S
+                    P_eq = (trueB1 - trueA1 + currentCValues[i] + epsilon_S - epsilon_D) / (trueA2 - trueB2);
+                }
+
+                let Q_eq;
+                if (modelType === 'just-identified') {
+                     Q_eq = trueA1 + trueA2 * P_eq + currentMValues[i] + epsilon_D;
+                } else { // under-identified
+                     Q_eq = trueA1 + trueA2 * P_eq + epsilon_D; // No M in Q calc
+                }
+
+                currentData.push({ P: P_eq, Q: Q_eq });
+            }
+
+            // Reset flags and buttons
+            if (modelType === 'just-identified') {
+                ji_data_generated_flag = true;
+                ji_lines_estimated_flag = false;
+                document.getElementById('estimateButtonJI').disabled = false;
+                ji_estimatedDemandParams = { const: NaN, P_hat: NaN, M: NaN };
+                ji_estimatedSupplyParams = { const: NaN, P_hat: NaN, C: NaN };
+            } else {
+                ui_data_generated_flag = true;
+                ui_lines_estimated_flag = false;
+                document.getElementById('estimateButtonUI').disabled = false;
+                ui_estimatedDemandParams = { const: NaN, P_hat: NaN };
+                ui_estimatedSupplyParams = { const: NaN, P_hat: NaN, C: NaN };
+            }
+            updateGraph(modelType);
+        }
+
+        function estimateLines(modelType) {
+            let currentData, currentMValues, currentCValues, trueA1, trueA2, trueB1, trueB2;
+            let estimatedDemandParamsRef, estimatedSupplyParamsRef;
+            let estimateButton;
+
+            if (modelType === 'just-identified') {
+                currentData = ji_data_points;
+                currentMValues = ji_generated_M_values;
+                currentCValues = ji_generated_C_values;
+                trueA1 = JI_TRUE_A1; trueA2 = JI_TRUE_A2;
+                trueB1 = JI_TRUE_B1; trueB2 = JI_TRUE_B2;
+                estimatedDemandParamsRef = ji_estimatedDemandParams;
+                estimatedSupplyParamsRef = ji_estimatedSupplyParams;
+                estimateButton = document.getElementById('estimateButtonJI');
+            } else { // under-identified
+                currentData = ui_data_points;
+                currentMValues = ui_generated_M_values;
+                currentCValues = ui_generated_C_values;
+                trueA1 = UI_TRUE_A1; trueA2 = UI_TRUE_A2;
+                trueB1 = UI_TRUE_B1; trueB2 = UI_TRUE_B2;
+                estimatedDemandParamsRef = ui_estimatedDemandParams;
+                estimatedSupplyParamsRef = ui_estimatedSupplyParams;
+                estimateButton = document.getElementById('estimateButtonUI');
+            }
+
+            if (!currentData || currentData.length === 0) {
+                console.warn("No data to estimate. Generate data first.");
+                return;
+            }
+
+            const P_values = currentData.map(d => d.P);
+            const Q_values = currentData.map(d => d.Q);
+
+            // --- 2SLS Step 1: Estimate Reduced Form for P ---
+            let P_hat_values = [];
+            let P_coeffs;
+
+            if (modelType === 'just-identified') {
+                const X_reduced_form = currentMValues.map((m, i) => [1, m, currentCValues[i]]); // [const, M, C]
+                P_coeffs = ols(P_values, X_reduced_form);
+                if (P_coeffs.length === 3 && !isNaN(P_coeffs[0])) { // Check for valid coefficients
+                    P_hat_values = P_values.map((p, i) => P_coeffs[0] + P_coeffs[1] * currentMValues[i] + P_coeffs[2] * currentCValues[i]);
+                }
+            } else { // under-identified
+                // P is regressed on C only (no M in demand)
+                const X_reduced_form = currentCValues.map(c => [1, c]); // [const, C]
+                P_coeffs = ols(P_values, X_reduced_form);
+                if (P_coeffs.length === 2 && !isNaN(P_coeffs[0])) { // Check for valid coefficients
+                    P_hat_values = P_values.map((p, i) => P_coeffs[0] + P_coeffs[1] * currentCValues[i]);
+                }
+            }
+
+            if (P_hat_values.length === 0 || P_hat_values.some(isNaN)) {
+                console.error("Failed to generate P_hat values for estimation. Check P_coeffs or data variance.");
+                // Indicate estimation failure for both functions
+                estimatedDemandParamsRef.const = estimatedDemandParamsRef.P_hat = estimatedDemandParamsRef.M = NaN;
+                estimatedSupplyParamsRef.const = estimatedSupplyParamsRef.P_hat = estimatedSupplyParamsRef.C = NaN;
+                if (modelType === 'just-identified') { ji_lines_estimated_flag = true; } else { ui_lines_estimated_flag = true; }
+                updateGraph(modelType);
+                return;
+            }
+
+            // --- 2SLS Step 2a: Estimate Demand Function ---
+            let demand_coeffs;
+            if (modelType === 'just-identified') {
+                // Q = a1 + a2*P_hat + M
+                const X_demand_stage2 = P_hat_values.map((p_hat, i) => [1, p_hat, currentMValues[i]]);
+                demand_coeffs = ols(Q_values, X_demand_stage2);
+                if (demand_coeffs.length === 3 && !isNaN(demand_coeffs[0])) {
+                    estimatedDemandParamsRef.const = demand_coeffs[0];
+                    estimatedDemandParamsRef.P_hat = demand_coeffs[1];
+                    estimatedDemandParamsRef.M = demand_coeffs[2];
+                } else {
+                    estimatedDemandParamsRef.const = estimatedDemandParamsRef.P_hat = estimatedDemandParamsRef.M = NaN;
+                    console.warn("Demand function (JI) estimation failed.");
+                }
+            } else { // under-identified
+                // Q = a1 + a2*P_hat (no M)
+                const X_demand_stage2 = P_hat_values.map(p_hat => [1, p_hat]);
+                demand_coeffs = ols(Q_values, X_demand_stage2);
+                if (demand_coeffs.length === 2 && !isNaN(demand_coeffs[0])) {
+                    estimatedDemandParamsRef.const = demand_coeffs[0];
+                    estimatedDemandParamsRef.P_hat = demand_coeffs[1];
+                } else {
+                    estimatedDemandParamsRef.const = estimatedDemandParamsRef.P_hat = NaN;
+                    console.warn("Demand function (UI) estimation failed.");
+                }
+            }
+
+            // --- 2SLS Step 2b: Estimate Supply Function ---
+            let supply_coeffs;
+            if (modelType === 'just-identified') {
+                // Q = b1 + b2*P_hat + C
+                const X_supply_stage2 = P_hat_values.map((p_hat, i) => [1, p_hat, currentCValues[i]]);
+                supply_coeffs = ols(Q_values, X_supply_stage2);
+                if (supply_coeffs.length === 3 && !isNaN(supply_coeffs[0])) {
+                    estimatedSupplyParamsRef.const = supply_coeffs[0];
+                    estimatedSupplyParamsRef.P_hat = supply_coeffs[1];
+                    estimatedSupplyParamsRef.C = supply_coeffs[2];
+                } else {
+                    estimatedSupplyParamsRef.const = estimatedSupplyParamsRef.P_hat = estimatedSupplyParamsRef.C = NaN;
+                    console.warn("Supply function (JI) estimation failed.");
+                }
+            } else { // under-identified
+                // Q = b1 + b2*P_hat + C
+                // This will be UNDER-IDENTIFIED because there is no exogenous variable in the demand equation
+                // that is NOT in the supply equation to serve as an instrument for P.
+                // The 'M' variable from demand is missing. So the number of excluded exog vars (0) < (endog_vars_in_eq - 1) (1)
+                // However, OLS *can* run if you just pass the variables. The coefficients will just be inconsistent.
+                // Here, we specifically want to show that it's unidentifiable.
+                // The `P_hat` will be highly collinear with `C` if `P` is only regressed on `C`.
+                // This often leads to singular matrix if you try to estimate it as if it were identified.
+                // Let's make it explicitly show N/A for supply parameters in UI mode.
+                estimatedSupplyParamsRef.const = NaN;
+                estimatedSupplyParamsRef.P_hat = NaN;
+                estimatedSupplyParamsRef.C = NaN;
+                console.warn("Supply function (UI) is under-identified and cannot be consistently estimated.");
+            }
+
+            // Set flags
+            if (modelType === 'just-identified') { ji_lines_estimated_flag = true; } else { ui_lines_estimated_flag = true; }
+            estimateButton.disabled = true; // Disable estimate button after estimation
+            updateGraph(modelType);
+        }
+
+
+        // --- Drawing Orchestration ---
+        function updateGraph(modelType) {
+            let canvas, ctx, currentData, trueA1, trueA2, trueB1, trueB2;
+            let estimatedDemandParamsRef, estimatedSupplyParamsRef;
+            let currentMMean, currentCMean;
+            let estimatedParamsSpanRef;
+            let dataGeneratedFlag, linesEstimatedFlag;
+
+            if (modelType === 'just-identified') {
+                canvas = document.getElementById('canvasJI');
+                ctx = canvas.getContext('2d');
+                currentData = ji_data_points;
+                trueA1 = JI_TRUE_A1; trueA2 = JI_TRUE_A2;
+                trueB1 = JI_TRUE_B1; trueB2 = JI_TRUE_B2;
+                estimatedDemandParamsRef = ji_estimatedDemandParams;
+                estimatedSupplyParamsRef = ji_estimatedSupplyParams;
+                currentMMean = parseFloat(mMeanSliderJI.value);
+                currentCMean = parseFloat(cMeanSliderJI.value);
+                estimatedParamsSpanRef = document.getElementById('estimatedParamsJI');
+                dataGeneratedFlag = ji_data_generated_flag;
+                linesEstimatedFlag = ji_lines_estimated_flag;
+            } else { // under-identified
+                canvas = document.getElementById('canvasUI');
+                ctx = canvas.getContext('2d');
+                currentData = ui_data_points;
+                trueA1 = UI_TRUE_A1; trueA2 = UI_TRUE_A2;
+                trueB1 = UI_TRUE_B1; trueB2 = UI_TRUE_B2;
+                estimatedDemandParamsRef = ui_estimatedDemandParams;
+                estimatedSupplyParamsRef = ui_estimatedSupplyParams;
+                currentMMean = 0; // M is not a variable for UI demand
+                currentCMean = parseFloat(cMeanSliderUI.value);
+                estimatedParamsSpanRef = document.getElementById('estimatedParamsUI');
+                dataGeneratedFlag = ui_data_generated_flag;
+                linesEstimatedFlag = ui_lines_estimated_flag;
+            }
+
+            setCanvasSize(canvas);
+            drawAxes(canvas, ctx);
+
+            // Always draw True Curves (M=0, C=0 for baseline)
+            drawLine(trueA2, trueA1, '#ef4444', `真の需要曲線`, true, 0, canvas, ctx); // red
+            drawLine(trueB2, trueB1, '#22c55e', `真の供給曲線`, false, 0, canvas, ctx); // green
+
+
+            // Draw observed data points only if generated
+            if (dataGeneratedFlag && currentData.length > 0) {
+                drawScatterPoints(currentData, '#60a5fa', canvas, ctx); // blue
+            }
+
+            // Draw Estimated Lines only if estimated
+            if (linesEstimatedFlag) {
+                if (!isNaN(estimatedDemandParamsRef.P_hat)) {
+                    // For estimated lines, the constant includes the effect of M or C when evaluated at 0.
+                    // Or, if M/C are included as regressors, we fix them at 0 for drawing the "base" line.
+                    // The M/C coefficient from estimation is applied to the *actual* M/C values in the data.
+                    // To draw a single line representing the estimated curve at its "base" position,
+                    // we add the estimated M/C coefficient * 0 (or average of M/C in data for consistency with `sm.OLS` default).
+                    // For visualization of the intercept, it's simpler to consider it at M=0 / C=0.
+                    const demandInterceptForDrawing = estimatedDemandParamsRef.const + (estimatedDemandParamsRef.M || 0) * 0; // M is zero for drawing base line
+                    drawLine(estimatedDemandParamsRef.P_hat, demandInterceptForDrawing, '#f97316', '推定 需要曲線', true, 0, canvas, ctx); // orange
+                }
+                if (!isNaN(estimatedSupplyParamsRef.P_hat)) {
+                    const supplyInterceptForDrawing = estimatedSupplyParamsRef.const + (estimatedSupplyParamsRef.C || 0) * 0; // C is zero for drawing base line
+                    drawLine(estimatedSupplyParamsRef.P_hat, supplyInterceptForDrawing, '#8b5cf6', '推定 供給曲線', false, 0, canvas, ctx); // purple
+                }
+            }
+
+            // Update estimated parameters display
+            if (modelType === 'just-identified') {
+                estimatedParamsSpanRef.innerHTML = `
+                    <p><strong>需要関数:</strong></p>
+                    <p>Pの係数 (a2): 真値=${JI_TRUE_A2.toFixed(2)}, 推定値=${estimatedDemandParamsRef.P_hat ? estimatedDemandParamsRef.P_hat.toFixed(2) : 'N/A'}</p>
+                    <p>Mの係数: 真値=1.00, 推定値=${estimatedDemandParamsRef.M ? estimatedDemandParamsRef.M.toFixed(2) : 'N/A'}</p>
+                    <p><strong>供給関数:</strong></p>
+                    <p>Pの係数 (b2): 真値=${JI_TRUE_B2.toFixed(2)}, 推定値=${estimatedSupplyParamsRef.P_hat ? estimatedSupplyParamsRef.P_hat.toFixed(2) : 'N/A'}</p>
+                    <p>Cの係数: 真値=1.00, 推定値=${estimatedSupplyParamsRef.C ? estimatedSupplyParamsRef.C.toFixed(2) : 'N/A'}</p>
+                `;
+            } else { // under-identified
+                 estimatedParamsSpanRef.innerHTML = `
+                    <p><strong>需要関数:</strong></p>
+                    <p>Pの係数 (a2): 真値=${UI_TRUE_A2.toFixed(2)}, 推定値=${estimatedDemandParamsRef.P_hat ? estimatedDemandParamsRef.P_hat.toFixed(2) : 'N/A'}</p>
+                    <p>Mの係数: 真値=0.00, 推定値=N/A (モデルにMなし)</p>
+                    <p><strong>供給関数:</strong></p>
+                    <p>Pの係数 (b2): 真値=${UI_TRUE_B2.toFixed(2)}, 推定値=${estimatedSupplyParamsRef.P_hat ? estimatedSupplyParamsRef.P_hat.toFixed(2) : '<span style="color:red;">N/A (過小識別)</span>'}</p>
+                    <p>Cの係数: 真値=1.00, 推定値=${estimatedSupplyParamsRef.C ? estimatedSupplyParamsRef.C.toFixed(2) : 'N/A'}</p>
+                `;
+            }
+        }
+
+
+        // --- Event Listeners and Tab Logic ---
+        const tabButtons = document.querySelectorAll('.tab-button');
+        const tabContents = document.querySelectorAll('.tab-content');
+
+        const mMeanSliderJI = document.getElementById('mMeanSliderJI');
+        const mMeanValueJI = document.getElementById('mMeanValueJI');
+        const cMeanSliderJI = document.getElementById('cMeanSliderJI');
+        const cMeanValueJI = document.getElementById('cMeanValueJI');
+        const generateButtonJI = document.getElementById('generateButtonJI');
+        const estimateButtonJI = document.getElementById('estimateButtonJI');
+
+        const cMeanSliderUI = document.getElementById('cMeanSliderUI');
+        const cMeanValueUI = document.getElementById('cMeanValueUI');
+        const generateButtonUI = document.getElementById('generateButtonUI');
+        const estimateButtonUI = document.getElementById('estimateButtonUI');
+
+        let activeTabId = 'just-identified'; // Initial active tab
+
+        function switchTab(tabId) {
+            activeTabId = tabId;
+
+            tabButtons.forEach(button => {
+                if (button.dataset.tab === tabId) {
+                    button.classList.add('active');
+                } else {
+                    button.classList.remove('active');
+                }
+            });
+
+            tabContents.forEach(content => {
+                if (content.id === tabId + 'Content') {
+                    content.classList.add('active');
+                    // Reset canvas size for new active canvas
+                    setCanvasSize(content.querySelector('canvas'));
+                } else {
+                    content.classList.remove('active');
+                }
+            });
+
+            // Re-initialize state for the new tab
+            if (tabId === 'just-identified') {
+                ji_data_generated_flag = false;
+                ji_lines_estimated_flag = false;
+                generateButtonJI.disabled = false;
+                estimateButtonJI.disabled = true;
+                updateGraph('just-identified');
+            } else { // under-identified
+                ui_data_generated_flag = false;
+                ui_lines_estimated_flag = false;
+                generateButtonUI.disabled = false;
+                estimateButtonUI.disabled = true;
+                updateGraph('under-identified');
+            }
+        }
+
+        tabButtons.forEach(button => {
+            button.addEventListener('click', () => switchTab(button.dataset.tab));
+        });
+
+        // Event listeners for Just-Identified tab
+        mMeanSliderJI.addEventListener('input', (event) => {
+            mMeanValueJI.textContent = parseFloat(event.target.value);
+            // Reset estimation state if sliders are changed after data generation
+            if (ji_data_generated_flag) {
+                ji_data_generated_flag = false; // Invalidate current data
+                ji_lines_estimated_flag = false;
+                estimateButtonJI.disabled = true;
+                updateGraph('just-identified');
+            }
+        });
+        cMeanSliderJI.addEventListener('input', (event) => {
+            cMeanValueJI.textContent = parseFloat(event.target.value);
+            if (ji_data_generated_flag) {
+                ji_data_generated_flag = false;
+                ji_lines_estimated_flag = false;
+                estimateButtonJI.disabled = true;
+                updateGraph('just-identified');
+            }
+        });
+        generateButtonJI.addEventListener('click', () => generateData('just-identified'));
+        estimateButtonJI.addEventListener('click', () => estimateLines('just-identified'));
+
+        // Event listeners for Under-Identified tab
+        cMeanSliderUI.addEventListener('input', (event) => {
+            cMeanValueUI.textContent = parseFloat(event.target.value);
+            if (ui_data_generated_flag) {
+                ui_data_generated_flag = false;
+                ui_lines_estimated_flag = false;
+                estimateButtonUI.disabled = true;
+                updateGraph('under-identified');
+            }
+        });
+        generateButtonUI.addEventListener('click', () => generateData('under-identified'));
+        estimateButtonUI.addEventListener('click', () => estimateLines('under-identified'));
+
+        // Initial setup
+        setCanvasSize(document.getElementById('canvasJI'));
+        setCanvasSize(document.getElementById('canvasUI')); // Set for both initially
+        switchTab('just-identified'); // Activate default tab and run initial setup for it
+
+        window.addEventListener('resize', () => {
+            setCanvasSize(document.getElementById('canvasJI'));
+            setCanvasSize(document.getElementById('canvasUI'));
+            updateGraph(activeTabId);
+        });
+    </script>
+</body>
+</html>
